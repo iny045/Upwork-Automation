@@ -1,3 +1,8 @@
+# open chrome with this : "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\chrome_debug_profile" --no-first-run --no-default-browser-check
+
+
+
+
 import os
 import time
 import json
@@ -14,12 +19,13 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.action_chains import ActionChains
 
 # =============================
 # CONFIG  — edit these
 # =============================
 
-API_KEY = "AIzaSyCZ8ofs30HFDQsQIU9Tra2gIVBvEPmpCyY"
+API_KEY = "AIzaSyAydVQSUFMOZj2jQVCQRv4rEB-hFmDNfFw"
 interval = 10
 save_folder = "screenshots"
 os.makedirs(save_folder, exist_ok=True)
@@ -27,7 +33,7 @@ os.makedirs(save_folder, exist_ok=True)
 # Your freelancer profile — Gemini uses this to judge fit & write cover letter
 YOUR_PROFILE = """
 Name: Inna Yadav
-Skills: Python, Machine learning, web scraping, automation, Django, Flask
+Skills: Python, Machine learning, web scraping, automation, Django, Flask, Algorithm Development, JavaScript, Object-Oriented DesignAI Model Integration, API Integration,ChatGPT API Integration,Python,Large Language Model,Prompt Engineering, LLM Prompt Engineering, Llama 3,Llama 2,Large Language Model
 Experience: 4 years backend development
 Past work: ntegrated WhatsApp Cloud API creating over 15 dynamic message templates and enabling two-way
 communication. Applied deb ugging and system design principles to improve customer engagement by 30%.
@@ -41,7 +47,7 @@ Availability: Full-time
 # Criteria Gemini uses to decide whether to apply
 APPLY_CRITERIA = """
 - Must involve Python or Django
-- Budget should be reasonable (not less than $10/hr or $100 fixed)
+- Budget should be reasonable (ANYTHING IS FINE )
 - Should NOT require skills I don't have (e.g. mobile development, C++, Java)
 - Prefer jobs posted by clients with payment verified
 - I wokr in India so prefer jobs that are open to Indian freelancers or remote jobs without strict timezone requirements.
@@ -70,7 +76,12 @@ def analyze_screenshot(image_path):
         2. If yes, is it sorted by "Most Recent"?
         3. If yes, extract the TOP visible project title.
 
-        If not applicable, set latest_project_title to null.
+        If not applicable, set latest_project_title to AI Model Integration
+        API Integration
+        ChatGPT API Integration
+        Python
+        Large Language Model
+        Prompt Engineeringnull.
 
         Return JSON only.
         """
@@ -125,47 +136,108 @@ def create_driver():
 # =============================
 
 def click_top_job(driver):
-    """Click the first job card on the current Upwork page."""
-    wait = WebDriverWait(driver, 15)
-    for selector in ["a.air3-link", "a[href*='/jobs/']", ".air3-link"]:
+    time.sleep(2)
+    
+    # Make sure we're on Upwork before clicking
+    for handle in driver.window_handles:
+        driver.switch_to.window(handle)
+        if "upwork.com" in driver.current_url:
+            break
+    
+    selectors = [
+        "h3.job-tile-title a",
+        "h3 a.air3-link",
+        "a.air3-link.text-decoration-none",
+        "[data-ev-label='link']",
+        "a[href*='/jobs/']",
+        "a[href*='_~']",
+    ]
+    
+    for selector in selectors:
         try:
-            card = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
-            card.click()
-            time.sleep(3)
-            print("✅ Clicked top job card")
-            return True
-        except Exception:
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            if elements:
+                # Scroll element into view first
+                driver.execute_script("arguments[0].scrollIntoView(true);", elements[0])
+                time.sleep(0.3)
+                # Use ActionChains instead of JS click
+                ActionChains(driver).move_to_element(elements[0]).click().perform()
+                time.sleep(2)
+                print(f"✅ Clicked using: {selector}")
+                return True
+        except Exception as e:
+            print(f"   tried {selector}: {e}")
             continue
-    print("❌ Could not find job card. Upwork DOM may have changed.")
+
+    print("❌ Could not find job card.")
+    driver.save_screenshot("debug_click_fail.png")
     return False
 
 
 def get_job_details(driver):
     """
-    Scroll through the job page in sections, capturing screenshots at each position.
-    Sends all screenshots to Gemini to extract complete job details.
+    Scrolls the job detail PANEL (not the background page) and captures screenshots.
     """
-    # Scroll back to top first to start fresh
-    driver.execute_script("window.scrollTo(0, 0);")
-    time.sleep(1.5)
+    time.sleep(1)  # let the panel fully load
+
+    # ── Find the scrollable job detail panel ──────────────────────────────
+    # Upwork's side panel uses one of these selectors (try in order)
+    panel_selectors = [
+        "[data-test='job-details-panel']",
+        ".job-details-panel",
+        "[class*='JobDetails']",
+        "[class*='job-detail']",
+        "aside",                          # fallback: side panel is often <aside>
+        "[data-test='job-tile-expanded']"
+    ]
+
+    panel = None
+    for selector in panel_selectors:
+        try:
+            panel = driver.find_element(By.CSS_SELECTOR, selector)
+            print(f"   ✅ Found job panel: {selector}")
+            break
+        except Exception:
+            continue
 
     screenshots = []
-    scroll_positions = [0, 400, 800, 1200]  # px — adjust if job pages are longer
 
-    for i, scroll_y in enumerate(scroll_positions):
-        driver.execute_script(f"window.scrollTo(0, {scroll_y});")
-        time.sleep(1)  # let content settle after scroll
+    if panel:
+        # Scroll INSIDE the panel element using JavaScript
+        scroll_positions = [0, 400, 800, 1200, 1400]
+        for i, scroll_y in enumerate(scroll_positions):
+            driver.execute_script("arguments[0].scrollTop = arguments[1];", panel, scroll_y)
+            time.sleep(1)
 
-        screenshot_bytes = driver.get_screenshot_as_png()
-        screenshots.append(
-            types.Part.from_bytes(data=screenshot_bytes, mime_type="image/png")
-        )
-        print(f"   📸 Captured scroll position {scroll_y}px (section {i+1}/{len(scroll_positions)})")
+            screenshot_bytes = driver.get_screenshot_as_png()
+            screenshots.append(
+                types.Part.from_bytes(data=screenshot_bytes, mime_type="image/png")
+            )
+            print(f"   📸 Panel scroll {scroll_y}px (section {i+1}/{len(scroll_positions)})")
 
-    # Scroll back to top so Apply button is accessible later
-    driver.execute_script("window.scrollTo(0, 0);")
+        # Reset panel scroll to top
+        driver.execute_script("arguments[0].scrollTop = 0;", panel)
+
+    else:
+        # Fallback: try scrolling the modal/overlay container instead of window
+        print("   ⚠️  Panel not found, trying modal scroll fallback...")
+        modal_js = """
+            // Find the deepest scrollable element that isn't the body/html
+            let el = document.querySelector('[role="dialog"], .up-modal, [class*="modal"], [class*="drawer"]');
+            if (el) { el.scrollTop = arguments[0]; }
+        """
+        for i, scroll_y in enumerate([0, 400, 800, 1200]):
+            driver.execute_script(modal_js, scroll_y)
+            time.sleep(1)
+            screenshot_bytes = driver.get_screenshot_as_png()
+            screenshots.append(
+                types.Part.from_bytes(data=screenshot_bytes, mime_type="image/png")
+            )
+            print(f"   📸 Modal scroll {scroll_y}px (section {i+1}/4)")
+
+        driver.execute_script(modal_js, 0)
+
     time.sleep(1)
-
     print("   🤖 Sending all sections to Gemini for extraction...")
 
     response = client.models.generate_content(
@@ -173,7 +245,7 @@ def get_job_details(driver):
         contents=[
             *screenshots,
             (
-                "These are sequential scrolled screenshots of a single Upwork job posting. "
+                "These are sequential scrolled screenshots of a single Upwork job posting panel. "
                 "Using ALL the screenshots together, extract the complete: "
                 "job title, full description, required skills, budget/rate, client info, "
                 "and any other relevant details. Return plain text."
